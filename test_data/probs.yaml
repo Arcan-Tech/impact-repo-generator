@@ -1,0 +1,17 @@
+probabilites:
+  - f1: file1.csv
+    f2:
+      path/to/file1.csv: .5
+      path/to/file2.csv: .1
+  - f1: file2.csv
+    f2:
+      path/to/file1.csv: .9
+      path/to/file2.csv: .2
+      path/to/file3.csv: .3
+  - f1: file3.csv
+    f2:
+      path/to/file3.csv: .3
+
+distribution: !Poisson
+    lambda: 1.0
+

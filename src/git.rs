@@ -22,7 +22,7 @@ impl GitWriter {
         Ok(Self { repo, fm, i: 0 })
     }
 
-    pub fn modify_and_commit(&mut self, pairs: &[&CCPair]) -> Result<()> {
+    pub fn modify_and_commit(&mut self, pairs: &[CCPair]) -> Result<()> {
         for p in pairs {
             match self.fm.write_pair(p) {
                 Ok(_) => {}
