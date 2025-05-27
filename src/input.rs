@@ -5,8 +5,25 @@ use serde::Deserialize;
 use statrs::distribution::{ContinuousCDF, DiscreteCDF};
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 
-use crate::model::CCPair;
+#[derive(Debug)]
+pub struct CCPair {
+    pub f1: String,
+    pub f2: String,
+}
+
+impl CCPair {
+    pub fn new(f1: String, f2: String) -> Self {
+        Self { f1, f2 }
+    }
+}
+
+impl std::fmt::Display for CCPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.f1, self.f2)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub enum Distr {
@@ -27,6 +44,7 @@ impl Distr {
             }
         }
     }
+
     pub fn cdf(&self, x: f64) -> f64 {
         match self {
             &Distr::Poisson { lambda } => {
@@ -47,15 +65,18 @@ impl Distr {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Probabilities {
+pub struct CCModel {
     pub probabilites: Vec<RippleProbability>,
     pub distribution: Distr,
 }
 
-impl Probabilities {
-    pub fn from_yaml(path: &str) -> Result<Probabilities, Box<dyn std::error::Error>> {
+impl CCModel {
+    pub fn from_yaml<P>(path: P) -> Result<CCModel, Box<dyn std::error::Error>>
+    where
+        P: AsRef<Path>,
+    {
         let contents = fs::read_to_string(path)?;
-        let data: Probabilities = serde_yaml::from_str(&contents)?;
+        let data: CCModel = serde_yaml::from_str(&contents)?;
         for p in &data.probabilites {
             p.f2.iter().for_each(|(f, &v)| {
                 assert!(
@@ -98,11 +119,9 @@ pub struct RippleProbability {
     pub f2: HashMap<String, f64>,
 }
 
-impl RippleProbability {}
-
 #[cfg(test)]
 mod tests {
-    use super::{Distr, Probabilities};
+    use super::{CCModel, Distr};
 
     #[test]
     fn test_sample() {
@@ -127,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_read() {
-        let pfile = Probabilities::from_yaml("./test_data/probs.yaml").unwrap();
+        let pfile = CCModel::from_yaml("./test_data/probs.yaml").unwrap();
         assert_eq!(3, pfile.probabilites.len());
         for pair in pfile.roll_cochanges() {
             println!("{}", pair);
