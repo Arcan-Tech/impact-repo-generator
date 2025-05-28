@@ -8,7 +8,9 @@ Examples of the file are present in the `test_data` directory.
 
 # Usage
 Running
-`./repo-generator -p ./test_data/probs.yaml -r /tmp/output_repo -c 10 --hours 48 -C 3`
+```sh
+./repo-generator -p ./test_data/probs.yaml -r /tmp/output_repo -c 10 --hours 48 -C 3
+```
 will generate a repository at `/tmp/output_repo` with `-c 10` commits with an average of 48 hours interval between them and, on the average, every 3 commits reference a new issue.
 
 
@@ -16,5 +18,6 @@ will generate a repository at `/tmp/output_repo` with `-c 10` commits with an av
 
 - [ ] Dockerization
 - [x] Add multiple author generation
-- [ ] Issue generation is function of files modified
+- [ ] Issue generation is function of changed files
+- [ ] Author generation is function of changed files (?)
 - [ ] Consider adding multiple branches
