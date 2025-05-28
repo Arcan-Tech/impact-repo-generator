@@ -9,7 +9,7 @@ use crate::input::{CCModel, CCPair};
 use anyhow::{bail, Result};
 use chrono::Duration;
 use git2::{IndexAddOption, Repository, Signature, Time};
-use log::{error, info};
+use log::info;
 use rand::rng;
 use rand_distr::{Distribution, Exp, Poisson};
 
@@ -68,6 +68,43 @@ impl Iterator for IssueGenerator {
     }
 }
 
+pub struct AuthorGenerator {
+    n: u32,
+    i: u32,
+    d: Poisson<f64>,
+}
+
+pub struct AuthorInput {
+    name: String,
+    email: String,
+}
+
+impl AuthorGenerator {
+    pub fn new(authors: u32, average_consecutive_commits: f64) -> Self {
+        let d = Poisson::new(1.0 / average_consecutive_commits).unwrap();
+        Self {
+            n: authors,
+            i: 1,
+            d,
+        }
+    }
+}
+
+impl Iterator for AuthorGenerator {
+    type Item = AuthorInput;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let x = self.d.sample(&mut rand::rng());
+        if x >= 1.0 {
+            self.i = rand::random::<u32>() % self.n;
+        }
+        Some(AuthorInput {
+            name: format!("Author_{}", self.i),
+            email: format!("Author_{}@email.com", self.i),
+        })
+    }
+}
+
 pub struct CommitInput {
     message: String,
     committer: Signature<'static>,
@@ -78,6 +115,7 @@ pub struct CommitGenerator {
     i: u32,
     timestamp_generator: TimeStampGenerator,
     issue_generator: IssueGenerator,
+    author_generator: AuthorGenerator,
 }
 
 impl CommitGenerator {
@@ -85,12 +123,14 @@ impl CommitGenerator {
         n_commits: u32,
         timestamp_generator: TimeStampGenerator,
         issue_generator: IssueGenerator,
+        author_generator: AuthorGenerator,
     ) -> Self {
         Self {
             n: n_commits,
             i: 0,
             timestamp_generator,
             issue_generator,
+            author_generator,
         }
     }
 
@@ -111,7 +151,8 @@ impl Iterator for CommitGenerator {
         let issue = self.issue_generator.next().unwrap();
         let message = format!("{} - commit number {}", issue, self.i);
         let ts = Time::new(self.timestamp_generator.next().unwrap(), 0);
-        let committer = Signature::new("Git Generator", "some@email.com", &ts).unwrap();
+        let author = self.author_generator.next().unwrap();
+        let committer = Signature::new(&author.name, &author.email, &ts).unwrap();
         Some(CommitInput { message, committer })
     }
 }
@@ -252,5 +293,26 @@ impl FileManager {
 
         writeln!(file_f2, "File changed because {} changed", pair.f1)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AuthorGenerator, IssueGenerator};
+
+    #[test]
+    pub fn test_author_generator() {
+        let mut au_gen = AuthorGenerator::new(3, 3.0);
+        for _ in 0..100 {
+            println!("{}", au_gen.next().unwrap().name);
+        }
+    }
+
+    #[test]
+    pub fn test_issue_generator() {
+        let mut is_gen = IssueGenerator::new("#", 3);
+        for _ in 0..100 {
+            println!("{}", is_gen.next().unwrap());
+        }
     }
 }

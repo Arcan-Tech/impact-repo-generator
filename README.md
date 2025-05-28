@@ -15,5 +15,6 @@ will generate a repository at `/tmp/output_repo` with `-c 10` commits with an av
 # Future work
 
 - [ ] Dockerization
-- [ ] Add multiple author generation
+- [x] Add multiple author generation
+- [ ] Issue generation is function of files modified
 - [ ] Consider adding multiple branches

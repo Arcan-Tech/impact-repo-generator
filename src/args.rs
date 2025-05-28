@@ -5,7 +5,10 @@ use clap::Parser;
 use log::LevelFilter;
 
 use crate::{
-    git::{CCPairGenerator, CommitGenerator, GitWriter, IssueGenerator, TimeStampGenerator},
+    git::{
+        AuthorGenerator, CCPairGenerator, CommitGenerator, GitWriter, IssueGenerator,
+        TimeStampGenerator,
+    },
     input::CCModel,
 };
 use anyhow::{Context, Result};
@@ -46,6 +49,12 @@ pub struct Args {
         help = "Average commits per issue"
     )]
     commits_per_issue: u32,
+
+    #[arg(short = 'a', default_value_t = 3)]
+    n_authors: u32,
+
+    #[arg(short = 'A', default_value_t = 3)]
+    commits_per_author: u32,
 
     #[arg(
         long,
@@ -88,6 +97,10 @@ impl Cli {
         ))
     }
 
+    fn get_author_generator(&self) -> AuthorGenerator {
+        AuthorGenerator::new(self.args.n_authors, self.args.commits_per_author as f64)
+    }
+
     pub fn get_issue_generator(&self) -> IssueGenerator {
         IssueGenerator::new(&self.args.issue_prefix, self.args.commits_per_issue)
     }
@@ -106,7 +119,8 @@ impl Cli {
             .get_timestamp_generator()
             .with_context(|| "Failed getting timestamp generator")?;
         let is_gen = self.get_issue_generator();
-        let cm_gen = CommitGenerator::new(self.args.commits, ts_gen, is_gen);
+        let au_gen = self.get_author_generator();
+        let cm_gen = CommitGenerator::new(self.args.commits, ts_gen, is_gen, au_gen);
         let cc_gen = CCPairGenerator::new(self.get_model()?);
         self.force_create_output_dir()?;
         let gw = GitWriter::new(self.args.repository, cc_gen, cm_gen)?;
