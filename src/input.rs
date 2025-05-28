@@ -1,3 +1,4 @@
+use anyhow::Result;
 use core::f64;
 use itertools::Itertools;
 use rand_distr::Distribution;
@@ -71,7 +72,7 @@ pub struct CCModel {
 }
 
 impl CCModel {
-    pub fn from_yaml<P>(path: P) -> Result<CCModel, Box<dyn std::error::Error>>
+    pub fn from_yaml<P>(path: P) -> Result<CCModel>
     where
         P: AsRef<Path>,
     {

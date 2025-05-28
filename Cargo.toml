@@ -1,6 +1,6 @@
 [package]
-name = "impact-repo-gen"
-version = "0.1.0"
+name = "repo-generator"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]

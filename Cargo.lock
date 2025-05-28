@@ -435,24 +435,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "impact-repo-gen"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "env_logger",
- "git2",
- "itertools",
- "log",
- "rand 0.9.1",
- "rand_distr 0.5.1",
- "serde",
- "serde_yaml",
- "statrs",
-]
-
-[[package]]
 name = "indexmap"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -891,6 +873,24 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "repo-generator"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "env_logger",
+ "git2",
+ "itertools",
+ "log",
+ "rand 0.9.1",
+ "rand_distr 0.5.1",
+ "serde",
+ "serde_yaml",
+ "statrs",
+]
 
 [[package]]
 name = "rustversion"

@@ -5,11 +5,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::input::CCPair;
-use anyhow::Result;
+use crate::input::{CCModel, CCPair};
+use anyhow::{bail, Result};
 use chrono::Duration;
 use git2::{IndexAddOption, Repository, Signature, Time};
-use log::error;
+use log::{error, info};
 use rand::rng;
 use rand_distr::{Distribution, Exp, Poisson};
 
@@ -33,7 +33,6 @@ impl Iterator for TimeStampGenerator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let interval = self.d.sample(&mut rand::rng()).round();
-        dbg!(interval);
         self.start = self.start + interval as i64;
         Some(self.start)
     }
@@ -69,19 +68,84 @@ impl Iterator for IssueGenerator {
     }
 }
 
+pub struct CommitInput {
+    message: String,
+    committer: Signature<'static>,
+}
+
+pub struct CommitGenerator {
+    n: u32,
+    i: u32,
+    timestamp_generator: TimeStampGenerator,
+    issue_generator: IssueGenerator,
+}
+
+impl CommitGenerator {
+    pub fn new(
+        n_commits: u32,
+        timestamp_generator: TimeStampGenerator,
+        issue_generator: IssueGenerator,
+    ) -> Self {
+        Self {
+            n: n_commits,
+            i: 0,
+            timestamp_generator,
+            issue_generator,
+        }
+    }
+
+    pub fn commit_number(&self) -> u32 {
+        self.i
+    }
+}
+
+impl Iterator for CommitGenerator {
+    type Item = CommitInput;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.n {
+            return None;
+        }
+
+        self.i = self.i + 1;
+        let issue = self.issue_generator.next().unwrap();
+        let message = format!("{} - commit number {}", issue, self.i);
+        let ts = Time::new(self.timestamp_generator.next().unwrap(), 0);
+        let committer = Signature::new("Git Generator", "some@email.com", &ts).unwrap();
+        Some(CommitInput { message, committer })
+    }
+}
+
+pub struct CCPairGenerator {
+    model: CCModel,
+}
+
+impl CCPairGenerator {
+    pub fn new(model: CCModel) -> Self {
+        Self { model }
+    }
+}
+
+impl Iterator for CCPairGenerator {
+    type Item = Vec<CCPair>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.model.roll_cochanges())
+    }
+}
+
 pub struct GitWriter {
     repo: Repository,
     fm: FileManager,
-    i: usize,
-    timestamp_generator: TimeStampGenerator,
-    issue_generator: IssueGenerator,
+    commit_generator: CommitGenerator,
+    ccpair_generator: CCPairGenerator,
 }
 
 impl GitWriter {
     pub fn new<P>(
         path: P,
-        timestamp_generator: TimeStampGenerator,
-        issue_generator: IssueGenerator,
+        ccpair_generator: CCPairGenerator,
+        commit_generator: CommitGenerator,
     ) -> Result<Self>
     where
         P: AsRef<Path>,
@@ -91,27 +155,36 @@ impl GitWriter {
         Ok(Self {
             repo,
             fm,
-            i: 0,
-            timestamp_generator,
-            issue_generator,
+            commit_generator,
+            ccpair_generator,
         })
     }
 
-    pub fn modify_and_commit(&mut self, pairs: &[CCPair]) -> Result<()> {
-        for p in pairs {
-            match self.fm.write_pair(p) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Could not write pair {}: {}", p, e)
-                }
+    pub fn generate(&mut self) -> Result<()> {
+        while let Some(commit) = self.commit_generator.next() {
+            info!("Prepared commit {}", self.commit_generator.commit_number());
+            let pairs = self.ccpair_generator.next().unwrap();
+            info!("Generated {} co-changes", pairs.len());
+            for p in pairs {
+                match self.fm.write_pair(&p) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        bail!(
+                            "Could not write co-change of file {} and {}: {}. Ensure directories exists.",
+                            p.f1,
+                            p.f2,
+                            e
+                        )
+                    }
+                };
             }
+            self.commit(&commit)?;
+            info!("Committed changes.");
         }
-        let issue = self.issue_generator.next().unwrap();
-        self.i = self.i + 1;
-        self.commit(&format!("{} commit number {}", issue, self.i))
+        Ok(())
     }
 
-    fn commit(&mut self, message: &str) -> Result<()> {
+    fn commit(&mut self, commit: &CommitInput) -> Result<()> {
         let mut index = self.repo.index()?;
         index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
         index.write()?;
@@ -123,22 +196,26 @@ impl GitWriter {
             .and_then(|h| h.target())
             .and_then(|t| self.repo.find_commit(t).ok());
 
-        let ts = Time::new(self.timestamp_generator.next().unwrap(), 0);
-        let committer = Signature::new("Git Generator", "some@email.com", &ts)?;
         match parent_commit {
             Some(parent) => {
                 self.repo.commit(
                     Some("HEAD"),
-                    &committer,
-                    &committer,
-                    message,
+                    &commit.committer,
+                    &commit.committer,
+                    &commit.message,
                     &tree,
                     &[&parent],
                 )?;
             }
             None => {
-                self.repo
-                    .commit(Some("HEAD"), &committer, &committer, message, &tree, &[])?;
+                self.repo.commit(
+                    Some("HEAD"),
+                    &commit.committer,
+                    &commit.committer,
+                    &commit.message,
+                    &tree,
+                    &[],
+                )?;
             }
         }
         Ok(())
