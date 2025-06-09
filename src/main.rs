@@ -5,6 +5,7 @@ use log::error;
 pub mod args;
 pub mod git;
 pub mod input;
+pub mod stat;
 
 fn main() {
     let cli: Cli = Args::parse().into();
