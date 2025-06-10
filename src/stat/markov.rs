@@ -1,9 +1,11 @@
 use std::{collections::HashMap, fmt::Display, hash::Hash, rc::Rc};
 
 use anyhow::bail;
-use itertools::Itertools;
+use itertools::{concat, Itertools};
 use rand::rng;
 use rand_distr::{Distribution, Uniform};
+
+use crate::input::RippleProbability;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct State {
@@ -26,6 +28,27 @@ impl TMatrix {
         TMatrix {
             states: HashMap::new(),
         }
+    }
+
+    pub fn from_ripple(rips: &[RippleProbability]) -> Self {
+        let mut m = Self::new();
+        let mut state_map = HashMap::new();
+        let states = rips
+            .iter()
+            .flat_map(|r| concat(vec![vec![r.f1.clone()], r.f2.keys().cloned().collect_vec()]))
+            .collect_vec();
+        for s in states {
+            let rcs = m.add_state(s.clone());
+            state_map.insert(s, rcs);
+        }
+        for r in rips {
+            let f1 = state_map.get(&r.f1).unwrap();
+            for (f2, &p) in r.f2.iter() {
+                let f2 = state_map.get(f2).unwrap();
+                m.add_transition(f1, (f2, p as f32));
+            }
+        }
+        m
     }
 
     pub fn add_states<S: Into<State>>(&mut self, s: Vec<S>) -> Vec<Rc<State>> {
@@ -165,9 +188,10 @@ impl Display for State {
         write!(f, "<{}>", self.name)
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use crate::stat::markov::MarkovProcess;
+    use crate::{input::RippleProbability, stat::markov::MarkovProcess};
 
     use super::TMatrix;
 
@@ -236,5 +260,28 @@ mod tests {
             "{} is not none because file2 and file3 are both wells",
             sn.unwrap()
         );
+    }
+
+    #[test]
+    fn test_from_rips() {
+        let m = vec![
+            RippleProbability {
+                f1: "file1".to_string(),
+                f2: vec![("file1".to_string(), 0.30), ("file2".to_string(), 0.70)]
+                    .into_iter()
+                    .collect(),
+            },
+            RippleProbability {
+                f1: "file2".to_string(),
+                f2: vec![("file1".to_string(), 0.30), ("file2".to_string(), 0.70)]
+                    .into_iter()
+                    .collect(),
+            },
+        ];
+        let m = TMatrix::from_ripple(&m);
+        assert_eq!(m.states.len(), 2);
+        for v in m.states.values() {
+            assert_eq!(v.len(), 2);
+        }
     }
 }
