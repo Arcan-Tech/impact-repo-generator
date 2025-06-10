@@ -1,93 +1,99 @@
-use std::{collections::HashMap, fmt::Display, hash::Hash, rc::Rc};
+use std::{collections::HashMap, fmt::Display, fs, hash::Hash, path::Path};
 
 use anyhow::bail;
-use itertools::{concat, Itertools};
+use itertools::Itertools;
 use rand::rng;
 use rand_distr::{Distribution, Uniform};
+use serde::Deserialize;
 
-use crate::input::RippleProbability;
-
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub struct State {
-    pub name: String,
+#[derive(Hash, Default, Eq, PartialEq, Clone, Debug, Deserialize)]
+pub enum State {
+    #[default]
+    Initial,
+    File(String),
+    Author(String),
 }
 
-#[derive(Clone, Debug)]
+impl State {
+    pub fn name(&self) -> &str {
+        match self {
+            State::Initial => "initial_state",
+            State::File(name) => name,
+            State::Author(name) => name,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Transition {
-    pub to: Rc<State>,
+    pub to: State,
     pub p: f32,
 }
 
-#[derive(Debug, Clone)]
+pub type Transitions = Vec<Transition>;
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct TMatrix {
-    states: HashMap<Rc<State>, Vec<Transition>>,
+    matrix: HashMap<State, Transitions>,
 }
 
 impl TMatrix {
     pub fn new() -> Self {
         TMatrix {
-            states: HashMap::new(),
+            matrix: HashMap::new(),
         }
-    }
-
-    pub fn from_ripple(rips: &[RippleProbability]) -> Self {
-        let mut m = Self::new();
-        let mut state_map = HashMap::new();
-        let states = rips
-            .iter()
-            .flat_map(|r| concat(vec![vec![r.f1.clone()], r.f2.keys().cloned().collect_vec()]))
-            .collect_vec();
-        for s in states {
-            let rcs = m.add_state(s.clone());
-            state_map.insert(s, rcs);
-        }
-        for r in rips {
-            let f1 = state_map.get(&r.f1).unwrap();
-            for (f2, &p) in r.f2.iter() {
-                let f2 = state_map.get(f2).unwrap();
-                m.add_transition(f1, (f2, p as f32));
-            }
-        }
-        m
-    }
-
-    pub fn add_states<S: Into<State>>(&mut self, s: Vec<S>) -> Vec<Rc<State>> {
-        s.into_iter().map(|s| self.add_state(s)).collect_vec()
-    }
-
-    pub fn add_state<S: Into<State>>(&mut self, s: S) -> Rc<State> {
-        let s = Rc::new(s.into());
-        self.states.insert(s.clone(), Vec::new());
-        return s;
     }
 
     pub fn set_transitions<S: Into<State>, T: Into<Transition>>(&mut self, s: S, ts: Vec<T>) {
-        let s = s.into().into();
+        let s = s.into();
         let mut transitions = ts.into_iter().map(|t| t.into()).collect_vec();
         transitions.sort();
-        self.states.insert(s, transitions);
+        self.matrix.insert(s, transitions);
     }
 
-    pub fn add_transition<T: Into<Transition>>(&mut self, s: &Rc<State>, t: T) {
+    pub fn add_transition<T: Into<Transition>>(&mut self, s: &State, t: T) -> anyhow::Result<()> {
         let t = t.into();
-        let transitions = self.states.get_mut(s).expect("state not found");
-        let position = transitions.iter().position(|old| *old == t);
-        if let Some(i) = position {
-            let _old = std::mem::replace(&mut transitions[i], t);
+        if let Some(transitions) = self.matrix.get_mut(s) {
+            let position = transitions.iter().position(|old| *old == t);
+            if let Some(i) = position {
+                let _old = std::mem::replace(&mut transitions[i], t);
+            } else {
+                transitions.push(t);
+            }
+            transitions.sort();
         } else {
-            transitions.push(t);
+            bail!("Could not find state '{}': ignoring", s);
         }
-        transitions.sort();
+        Ok(())
     }
 
-    pub fn next(&self, s: &Rc<State>, x: f32) -> Option<Rc<State>> {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for (s, ts) in &self.matrix {
+            let ps = ts.iter().map(|t| t.p).sum::<f32>();
+            if ts.len() > 0 && (ps - 1.0).abs() >= 0.00001 {
+                bail!(
+                    "Transition probabilities of '{}' sum to {} > 1.0",
+                    s.name(),
+                    ps
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub fn next(&self, s: &State, x: f32) -> Option<State> {
         assert!(
             x >= 0.0 && x <= 1.0,
             "Selecting factor must be in the range [0, 1]."
         );
         let mut c = 0.0;
         let mut r = None;
-        for t in self.states.get(s).expect("state not found").iter() {
+        for t in self
+            .matrix
+            .get(s)
+            .expect(&format!("state not found: {}", s.name()))
+            .iter()
+        {
             c = t.p + c;
             if x <= c {
                 let _ = r.insert(t.to.clone());
@@ -98,41 +104,58 @@ impl TMatrix {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct MarkovProcess {
-    pub current: Rc<State>,
-    m: TMatrix,
+    pub current: State,
+    transitions: TMatrix,
+
+    #[serde(skip, default = "default_uniform")]
     d: Uniform<f32>,
 }
 
-impl MarkovProcess {
-    pub fn new(m: TMatrix, starting: Rc<State>) -> anyhow::Result<Self> {
-        for (s, ts) in &m.states {
-            let ps = ts.iter().map(|t| t.p).sum::<f32>();
-            if ts.len() > 0 && (ps - 1.0).abs() >= 0.00001 {
-                dbg!(ts);
-                bail!(
-                    "Transition probabilities of '{}' sum to {} > 1.0",
-                    s.name,
-                    ps
-                );
-            }
-        }
+fn default_uniform() -> Uniform<f32> {
+    Uniform::new(0.0, 1.0).unwrap()
+}
 
+impl MarkovProcess {
+    pub fn new(m: TMatrix, starting: State) -> anyhow::Result<Self> {
+        m.validate()?;
         Ok(Self {
             current: starting,
-            m,
-            d: Uniform::new(0.0, 1.0)?,
+            transitions: m,
+            d: default_uniform(),
         })
     }
 
-    pub fn transition_next(&mut self) -> Option<Rc<State>> {
-        let x = self.d.sample(&mut rng());
-        let next = self.m.next(&self.current, x);
-        if let Some(next) = next.clone() {
-            self.current = next;
+    pub fn from_yaml<P: AsRef<Path>>(p: P) -> anyhow::Result<Self> {
+        let contents = fs::read_to_string(p)?;
+        let mut mp: Self = serde_yaml::from_str(&contents)?;
+        let mut to_add = Vec::new();
+        for (_, ts) in mp.transitions.matrix.iter_mut() {
+            ts.sort();
         }
-        next
+        for (_, ts) in mp.transitions.matrix.iter() {
+            for s in ts {
+                if !mp.transitions.matrix.contains_key(&s.to) {
+                    to_add.push(s.to.clone());
+                }
+            }
+        }
+        for s in to_add.into_iter() {
+            mp.transitions
+                .set_transitions(s, Vec::<(&State, f32)>::new());
+        }
+        Ok(mp)
+    }
+
+    pub fn transition_next(&mut self) -> Option<&State> {
+        let x = self.d.sample(&mut rng());
+        let next = self.transitions.next(&self.current, x);
+        if let Some(next) = next {
+            self.current = next;
+            return Some(&self.current);
+        };
+        return None;
     }
 }
 
@@ -144,8 +167,8 @@ impl From<(&str, f32)> for Transition {
         }
     }
 }
-impl From<(&Rc<State>, f32)> for Transition {
-    fn from(value: (&Rc<State>, f32)) -> Self {
+impl From<(&State, f32)> for Transition {
+    fn from(value: (&State, f32)) -> Self {
         Transition {
             to: value.0.clone(),
             p: value.1,
@@ -159,7 +182,7 @@ impl From<&str> for State {
 }
 impl From<String> for State {
     fn from(value: String) -> Self {
-        State { name: value }
+        State::File(value)
     }
 }
 impl Hash for Transition {
@@ -185,32 +208,31 @@ impl Ord for Transition {
 }
 impl Display for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<{}>", self.name)
+        write!(f, "<{}>", self.name())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{input::RippleProbability, stat::markov::MarkovProcess};
+    use crate::stat::markov::{MarkovProcess, State};
 
     use super::TMatrix;
 
     #[test]
     fn test_creation() {
         let mut m = TMatrix::new();
-        let states = vec!["file1", "file2"];
-        let states = m.add_states(states);
-        m.add_transition(&states[0], (&states[1], 0.65));
-        m.add_transition(&states[0], (&states[0], 0.35));
-        m.add_transition(&states[0], (&states[0], 0.35));
-        assert_eq!(m.states[&states[0]].len(), 2);
+        let states = vec!["file1".into(), "file3".into()];
+        m.add_transition(&states[0], (&states[1], 0.65)).unwrap();
+        m.add_transition(&states[0], (&states[0], 0.35)).unwrap();
+        m.add_transition(&states[0], (&states[0], 0.35)).unwrap();
+        assert_eq!(m.matrix[&states[0]].len(), 2);
 
         assert_eq!(
-            m.states[&states[0]],
+            m.matrix[&states[0]],
             vec![(&states[0], 0.35).into(), (&states[1], 0.65).into()]
         );
         assert_ne!(
-            m.states[&states[0]],
+            m.matrix[&states[0]],
             vec![(&states[1], 0.65).into(), (&states[0], 0.35).into()]
         );
 
@@ -221,10 +243,10 @@ mod tests {
     #[test]
     fn test_generation() {
         let mut m = TMatrix::new();
-        let states = m.add_states(vec!["file1", "file2"]);
+        let states = vec!["file1".into(), "file2".into()];
         let s0 = &states[0];
-        m.add_transition(s0, (&states[1], 0.65));
-        m.add_transition(s0, (&states[0], 0.35));
+        m.add_transition(s0, (&states[1], 0.65)).unwrap();
+        m.add_transition(s0, (&states[0], 0.35)).unwrap();
         let n0 = m.next(s0, 0.30);
         assert!(n0.is_some());
         assert_eq!(n0.unwrap(), states[0]);
@@ -237,20 +259,20 @@ mod tests {
     #[test]
     fn test_process() {
         let mut m = TMatrix::new();
-        let states = vec!["file1", "file2", "file3"];
-        let states = m.add_states(states);
+        let states: Vec<State> = vec!["file1".into(), "file2".into()];
         m.set_transitions("file1", vec![("file1", 0.5), ("file2", 0.5)]);
         m.set_transitions("file2", vec![("file1", 0.80), ("file2", 0.2)]);
         let mut mp = MarkovProcess::new(m, states[0].clone()).unwrap();
         for _i in 0..100 {
             let sn = mp.transition_next();
             assert!(sn.is_some());
-            let name = &sn.unwrap().name;
+            let name = sn.unwrap();
+            let name = name.name();
             assert!(name == "file1" || name == "file2");
         }
 
         let mut m = TMatrix::new();
-        let states = m.add_states(vec!["file1", "file2", "file3"]);
+        let states: Vec<State> = vec!["file1".into(), "file2".into(), "file3".into()];
         m.set_transitions("file1", vec![("file2", 0.5), ("file3", 0.5)]);
         let mut mp = MarkovProcess::new(m, states[0].clone()).unwrap();
         assert!(mp.transition_next().is_some());
@@ -263,25 +285,15 @@ mod tests {
     }
 
     #[test]
-    fn test_from_rips() {
-        let m = vec![
-            RippleProbability {
-                f1: "file1".to_string(),
-                f2: vec![("file1".to_string(), 0.30), ("file2".to_string(), 0.70)]
-                    .into_iter()
-                    .collect(),
-            },
-            RippleProbability {
-                f1: "file2".to_string(),
-                f2: vec![("file1".to_string(), 0.30), ("file2".to_string(), 0.70)]
-                    .into_iter()
-                    .collect(),
-            },
-        ];
-        let m = TMatrix::from_ripple(&m);
-        assert_eq!(m.states.len(), 2);
-        for v in m.states.values() {
-            assert_eq!(v.len(), 2);
+    fn test_deserialize_markov_process() {
+        let p = "./test_data/markov.yaml";
+        let mp = MarkovProcess::from_yaml(p);
+        assert!(mp.is_ok(), "{}", mp.unwrap_err());
+        let mut mp = mp.unwrap();
+        println!("{:?}", mp);
+        println!("{:?}", mp.transition_next());
+        while let Some(s) = mp.transition_next() {
+            println!("{}", s)
         }
     }
 }
