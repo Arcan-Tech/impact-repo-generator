@@ -1,4 +1,10 @@
-use std::{collections::HashMap, fmt::Display, fs, hash::Hash, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    fs,
+    hash::Hash,
+    path::Path,
+};
 
 use anyhow::bail;
 use itertools::Itertools;
@@ -12,8 +18,8 @@ pub enum State {
     Initial,
     File(String),
     Author(String),
-    Issue(String),  // TODO:
-    Module(String), // TODO:
+    Issue(String),
+    Module(String),
     Commit,
 }
 
@@ -26,6 +32,16 @@ impl State {
             State::Issue(prefix) => prefix,
             State::Module(name) => name,
             State::Author(name) => name,
+        }
+    }
+    pub fn variant_name(&self) -> &str {
+        match self {
+            State::Initial => "Initial",
+            State::Commit => "Commit",
+            State::File(_) => "File",
+            State::Issue(_) => "Issue",
+            State::Module(_) => "Module",
+            State::Author(_) => "Author",
         }
     }
 }
@@ -179,15 +195,53 @@ impl MarkovProcess {
 
     pub fn transition_next(&mut self) -> Option<&State> {
         let x = self.d.sample(&mut rng());
-        let next = self.transitions.next(&self.current, x);
-        if let Some(next) = next {
+        if let Some(next) = self.transitions.next(&self.current, x) {
             self.current = next;
             return Some(&self.current);
         };
         return None;
     }
+
+    pub fn path<'a>(&'a mut self, steps: usize) -> MarkovPath {
+        let mut path = MarkovPath::new();
+        path.append(self.current.clone());
+        for _ in 0..steps {
+            if let Some(s) = self.transition_next() {
+                path.append(s.clone());
+            }
+        }
+        path
+    }
 }
 
+#[derive(Debug, Clone)]
+pub struct MarkovPath {
+    path: Vec<State>,
+    seen: HashSet<State>,
+}
+
+impl MarkovPath {
+    pub fn new() -> Self {
+        MarkovPath {
+            path: Vec::new(),
+            seen: HashSet::new(),
+        }
+    }
+
+    pub fn append(&mut self, s: State) -> &mut Self {
+        if !self.seen.contains(&s) {
+            self.path.push(s.clone());
+            self.seen.insert(s);
+        }
+        self
+    }
+}
+
+impl Display for MarkovPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
 impl From<(&str, f32)> for Transition {
     fn from(value: (&str, f32)) -> Self {
         Self {
@@ -237,7 +291,7 @@ impl Ord for Transition {
 }
 impl Display for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<{}>", self.name())
+        write!(f, "{}({})", self.variant_name(), self.name())
     }
 }
 
@@ -324,8 +378,6 @@ mod tests {
         let mp = MarkovProcess::from_yaml(p);
         assert!(mp.is_ok(), "{}", mp.unwrap_err());
         let mut mp = mp.unwrap();
-        println!("{:?}", mp);
-        println!("{:?}", mp.transition_next());
         while let Some(s) = mp.transition_next() {
             println!("{}", s)
         }
@@ -333,5 +385,13 @@ mod tests {
             State::Commit => {}
             _ => assert!(false, "Last state should be Commit"),
         }
+    }
+
+    #[test]
+    fn test_pathing() {
+        let p = "./test_data/markov.yaml";
+        let mut mp = MarkovProcess::from_yaml(p).unwrap();
+        let path = mp.path(10);
+        dbg!(path);
     }
 }
