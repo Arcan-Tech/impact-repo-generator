@@ -12,13 +12,19 @@ pub enum State {
     Initial,
     File(String),
     Author(String),
+    Issue(String),  // TODO:
+    Module(String), // TODO:
+    Commit,
 }
 
 impl State {
     pub fn name(&self) -> &str {
         match self {
             State::Initial => "initial_state",
+            State::Commit => "commit",
             State::File(name) => name,
+            State::Issue(prefix) => prefix,
+            State::Module(name) => name,
             State::Author(name) => name,
         }
     }
@@ -51,6 +57,14 @@ impl TMatrix {
         self.matrix.insert(s, transitions);
     }
 
+    pub fn add_state<S: Into<State>>(&mut self, s: S) {
+        self.set_transitions(s, Vec::<(&State, f32)>::new());
+    }
+
+    pub fn add_states<S: Into<State>>(&mut self, ss: Vec<S>) {
+        ss.into_iter().for_each(|s| self.add_state(s));
+    }
+
     pub fn add_transition<T: Into<Transition>>(&mut self, s: &State, t: T) -> anyhow::Result<()> {
         let t = t.into();
         if let Some(transitions) = self.matrix.get_mut(s) {
@@ -62,9 +76,13 @@ impl TMatrix {
             }
             transitions.sort();
         } else {
-            bail!("Could not find state '{}': ignoring", s);
+            bail!("Could not find state '{}'", s);
         }
         Ok(())
+    }
+
+    pub fn states(&self) -> Vec<&State> {
+        self.matrix.keys().collect()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -72,11 +90,23 @@ impl TMatrix {
             let ps = ts.iter().map(|t| t.p).sum::<f32>();
             if ts.len() > 0 && (ps - 1.0).abs() >= 0.00001 {
                 bail!(
-                    "Transition probabilities of '{}' sum to {} > 1.0",
+                    "Transition probabilities of '{}' sum to {} != 1.0",
                     s.name(),
                     ps
                 );
             }
+        }
+        let contains_commit = self.states().iter().any(|s| matches!(**s, State::Commit));
+        if !contains_commit {
+            bail!("At least one Commit state should be defined")
+        }
+        let commits_sink = self
+            .states()
+            .iter()
+            .filter(|s| matches!(**s, State::Commit))
+            .all(|s| self.matrix.get(s).unwrap().len() == 0);
+        if !commits_sink {
+            bail!("All Commit states should have no outgoing transitions")
         }
         Ok(())
     }
@@ -119,7 +149,6 @@ fn default_uniform() -> Uniform<f32> {
 
 impl MarkovProcess {
     pub fn new(m: TMatrix, starting: State) -> anyhow::Result<Self> {
-        m.validate()?;
         Ok(Self {
             current: starting,
             transitions: m,
@@ -142,9 +171,9 @@ impl MarkovProcess {
             }
         }
         for s in to_add.into_iter() {
-            mp.transitions
-                .set_transitions(s, Vec::<(&State, f32)>::new());
+            mp.transitions.add_state(s);
         }
+        mp.transitions.validate()?;
         Ok(mp)
     }
 
@@ -222,9 +251,11 @@ mod tests {
     fn test_creation() {
         let mut m = TMatrix::new();
         let states = vec!["file1".into(), "file3".into()];
+        m.add_states(states.clone());
         m.add_transition(&states[0], (&states[1], 0.65)).unwrap();
         m.add_transition(&states[0], (&states[0], 0.35)).unwrap();
         m.add_transition(&states[0], (&states[0], 0.35)).unwrap();
+        println!("{:?}", m);
         assert_eq!(m.matrix[&states[0]].len(), 2);
 
         assert_eq!(
@@ -244,6 +275,7 @@ mod tests {
     fn test_generation() {
         let mut m = TMatrix::new();
         let states = vec!["file1".into(), "file2".into()];
+        m.add_states(states.clone());
         let s0 = &states[0];
         m.add_transition(s0, (&states[1], 0.65)).unwrap();
         m.add_transition(s0, (&states[0], 0.35)).unwrap();
@@ -260,6 +292,7 @@ mod tests {
     fn test_process() {
         let mut m = TMatrix::new();
         let states: Vec<State> = vec!["file1".into(), "file2".into()];
+        m.add_states(states.clone());
         m.set_transitions("file1", vec![("file1", 0.5), ("file2", 0.5)]);
         m.set_transitions("file2", vec![("file1", 0.80), ("file2", 0.2)]);
         let mut mp = MarkovProcess::new(m, states[0].clone()).unwrap();
@@ -273,6 +306,7 @@ mod tests {
 
         let mut m = TMatrix::new();
         let states: Vec<State> = vec!["file1".into(), "file2".into(), "file3".into()];
+        m.add_states(states.clone());
         m.set_transitions("file1", vec![("file2", 0.5), ("file3", 0.5)]);
         let mut mp = MarkovProcess::new(m, states[0].clone()).unwrap();
         assert!(mp.transition_next().is_some());
@@ -294,6 +328,10 @@ mod tests {
         println!("{:?}", mp.transition_next());
         while let Some(s) = mp.transition_next() {
             println!("{}", s)
+        }
+        match mp.current {
+            State::Commit => {}
+            _ => assert!(false, "Last state should be Commit"),
         }
     }
 }

@@ -1,0 +1,32 @@
+current: !Issue issue1
+transitions:
+  matrix:
+    !File file1:
+      - to: !File file2
+        p: 0.32
+      - to: !File file3
+        p: 0.10
+      - to: !Author author1
+        p: 0.58
+
+    !File file2:
+      - to: !File file3
+        p: 0.90
+      - to: !File file1
+        p: 0.10
+
+    !Issue issue1:
+      - to: !Module m1
+        p: 1
+
+    !Module m1:
+      - to: !File file1
+        p: 1
+
+    !Author author1:
+      - to: !Commit
+        p: 1
+
+    !Initial :
+      - to: !File file1
+        p: 1.0

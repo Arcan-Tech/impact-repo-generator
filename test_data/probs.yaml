@@ -1,3 +1,9 @@
+authors:
+  - author1:
+      file1.csv: .2
+  - author2:
+      file2.csv: .3
+
 probabilites:
   - f1: file1.csv
     f2:
