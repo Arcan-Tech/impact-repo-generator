@@ -15,6 +15,12 @@ transitions:
       - to: !File file1
         p: 0.10
 
+    !File file3:
+      - to: !File file2
+        p: 0.90
+      - to: !File file1
+        p: 0.10
+
     !Issue issue1:
       - to: !Module m1
         p: 1

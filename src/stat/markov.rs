@@ -1,10 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-    fs,
-    hash::Hash,
-    path::Path,
-};
+use std::{collections::HashMap, fmt::Display, fs, hash::Hash, path::Path};
 
 use anyhow::bail;
 use itertools::Itertools;
@@ -202,7 +196,7 @@ impl MarkovProcess {
         return None;
     }
 
-    pub fn path<'a>(&'a mut self, steps: usize) -> MarkovPath {
+    pub fn path_steps(&mut self, steps: usize) -> MarkovPath {
         let mut path = MarkovPath::new();
         path.append(self.current.clone());
         for _ in 0..steps {
@@ -212,34 +206,71 @@ impl MarkovProcess {
         }
         path
     }
+
+    pub fn path_until(&mut self, state: &State) -> MarkovPath {
+        let mut path = MarkovPath::new();
+        path.append(self.current.clone());
+        if *state == self.current {
+            return path;
+        }
+        loop {
+            if let Some(s) = self.transition_next() {
+                path.append(s.clone());
+                if *state == *s {
+                    break;
+                }
+            }
+        }
+        path
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct MarkovPath {
     path: Vec<State>,
-    seen: HashSet<State>,
+    seen: HashMap<State, u32>,
 }
 
 impl MarkovPath {
     pub fn new() -> Self {
         MarkovPath {
             path: Vec::new(),
-            seen: HashSet::new(),
+            seen: HashMap::new(),
         }
     }
 
     pub fn append(&mut self, s: State) -> &mut Self {
-        if !self.seen.contains(&s) {
+        if !self.seen.contains_key(&s) {
             self.path.push(s.clone());
-            self.seen.insert(s);
+            self.seen.insert(s, 1);
+        } else {
+            self.seen.get_mut(&s).map(|x| *x = *x + 1);
         }
         self
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&State, u32)> {
+        self.path.iter().map(|s| (s, *self.seen.get(s).unwrap()))
+    }
+
+    pub fn len(&self) -> usize {
+        self.path.len()
     }
 }
 
 impl Display for MarkovPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        if self.path.is_empty() {
+            writeln!(f, "Path[empty]")?;
+            return Ok(());
+        }
+        write!(f, "Path[")?;
+        for (e, x) in self.iter().take(self.len() - 1) {
+            write!(f, "({}, {}) -> ", e, x)?
+        }
+        let (e, x) = self.iter().last().unwrap();
+        writeln!(f, "({}, {})]", e, x)?;
+        Ok(())
     }
 }
 impl From<(&str, f32)> for Transition {
@@ -391,7 +422,11 @@ mod tests {
     fn test_pathing() {
         let p = "./test_data/markov.yaml";
         let mut mp = MarkovProcess::from_yaml(p).unwrap();
-        let path = mp.path(10);
-        dbg!(path);
+        let path = mp.path_steps(10);
+        println!("{}", path);
+        mp.current = State::Issue("issue1".to_string());
+        let path = mp.path_until(&State::Commit);
+        assert_eq!(path.iter().last().unwrap().0, &State::Commit);
+        println!("{}", path);
     }
 }
