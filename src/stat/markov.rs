@@ -38,6 +38,41 @@ impl State {
             State::Author(_) => "Author",
         }
     }
+
+    pub fn is_file(&self) -> bool {
+        match self {
+            Self::File(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_author(&self) -> bool {
+        match self {
+            Self::Author(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_commit(&self) -> bool {
+        match self {
+            Self::Commit => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_issue(&self) -> bool {
+        match self {
+            Self::Issue => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_initial(&self) -> bool {
+        match self {
+            Self::Initial => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -146,7 +181,8 @@ impl TMatrix {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MarkovProcess {
-    pub current: State,
+    current: State,
+    starting: State,
     transitions: TMatrix,
 
     #[serde(skip, default = "default_uniform")]
@@ -160,7 +196,8 @@ fn default_uniform() -> Uniform<f32> {
 impl MarkovProcess {
     pub fn new(m: TMatrix, starting: State) -> anyhow::Result<Self> {
         Ok(Self {
-            current: starting,
+            current: starting.clone(),
+            starting,
             transitions: m,
             d: default_uniform(),
         })
@@ -223,6 +260,10 @@ impl MarkovProcess {
         }
         path
     }
+
+    pub fn reset(&mut self) {
+        self.current = self.starting.clone();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -248,8 +289,11 @@ impl MarkovPath {
         }
         self
     }
+    pub fn iter(&self) -> impl Iterator<Item = &State> {
+        self.path.iter()
+    }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&State, u32)> {
+    pub fn iter_count(&self) -> impl Iterator<Item = (&State, u32)> {
         self.path.iter().map(|s| (s, *self.seen.get(s).unwrap()))
     }
 
@@ -265,10 +309,10 @@ impl Display for MarkovPath {
             return Ok(());
         }
         write!(f, "Path[")?;
-        for (e, x) in self.iter().take(self.len() - 1) {
+        for (e, x) in self.iter_count().take(self.len() - 1) {
             write!(f, "({}, {}) -> ", e, x)?
         }
-        let (e, x) = self.iter().last().unwrap();
+        let (e, x) = self.iter_count().last().unwrap();
         writeln!(f, "({}, {})]", e, x)?;
         Ok(())
     }
@@ -426,7 +470,7 @@ mod tests {
         println!("{}", path);
         mp.current = State::Issue("issue1".to_string());
         let path = mp.path_until(&State::Commit);
-        assert_eq!(path.iter().last().unwrap().0, &State::Commit);
+        assert_eq!(path.iter_count().last().unwrap().0, &State::Commit);
         println!("{}", path);
     }
 }
