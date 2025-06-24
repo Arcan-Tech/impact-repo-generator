@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, fs, hash::Hash, path::Path};
+use std::{collections::HashMap, fmt::Display, fs, hash::Hash, path::Path, u32};
 
 use anyhow::bail;
 use itertools::Itertools;
@@ -6,7 +6,9 @@ use rand::rng;
 use rand_distr::{Distribution, Uniform};
 use serde::Deserialize;
 
-#[derive(Hash, Default, Eq, PartialEq, Clone, Debug, Deserialize)]
+use super::generators::{Generator, PoissonBinaryGenerator};
+
+#[derive(Default, Hash, Eq, PartialEq, Clone, Debug, Deserialize)]
 pub enum State {
     #[default]
     Initial,
@@ -62,7 +64,7 @@ impl State {
 
     pub fn is_issue(&self) -> bool {
         match self {
-            Self::Issue => true,
+            Self::Issue(_) => true,
             _ => false,
         }
     }
@@ -130,6 +132,10 @@ impl TMatrix {
         self.matrix.keys().collect()
     }
 
+    pub fn get_state(&self, name: &str) -> Option<&State> {
+        self.matrix.keys().find(|s| s.name() == name)
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         for (s, ts) in &self.matrix {
             let ps = ts.iter().map(|t| t.p).sum::<f32>();
@@ -141,14 +147,14 @@ impl TMatrix {
                 );
             }
         }
-        let contains_commit = self.states().iter().any(|s| matches!(**s, State::Commit));
+        let contains_commit = self.states().iter().any(|s| s.is_commit());
         if !contains_commit {
             bail!("At least one Commit state should be defined")
         }
         let commits_sink = self
             .states()
             .iter()
-            .filter(|s| matches!(**s, State::Commit))
+            .filter(|s| s.is_commit())
             .all(|s| self.matrix.get(s).unwrap().len() == 0);
         if !commits_sink {
             bail!("All Commit states should have no outgoing transitions")
@@ -179,12 +185,58 @@ impl TMatrix {
     }
 }
 
+// TODO: test this
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssueGenerator {
+    commits_per_issue: HashMap<State, f64>,
+    #[serde(skip, default = "Option::default")]
+    current_issue: Option<State>,
+    #[serde(skip, default = "default_poisson_bin_generator")]
+    issue_generator: PoissonBinaryGenerator,
+    #[serde(default = "default_commits_per_issue")]
+    default_commits_per_issue: f64,
+}
+
+pub fn default_poisson_bin_generator() -> PoissonBinaryGenerator {
+    PoissonBinaryGenerator::new(default_commits_per_issue())
+}
+
+pub fn default_commits_per_issue() -> f64 {
+    1.0
+}
+
+impl IssueGenerator {
+    pub fn new(commits_per_issue: HashMap<State, f64>) -> Self {
+        Self {
+            commits_per_issue,
+            current_issue: None,
+            issue_generator: PoissonBinaryGenerator::new(default_commits_per_issue()),
+            default_commits_per_issue: default_commits_per_issue(),
+        }
+    }
+
+    pub fn next_issue(&mut self, issue: &State) -> State {
+        let keep_issue = self.issue_generator.next_bool().unwrap();
+        if self.current_issue.is_none() && !keep_issue {
+            self.current_issue.replace(issue.clone());
+            let commits_per_issue = *self
+                .commits_per_issue
+                .get(issue)
+                .unwrap_or(&self.default_commits_per_issue);
+            self.issue_generator = PoissonBinaryGenerator::new(commits_per_issue);
+        }
+        return self.current_issue.clone().unwrap();
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct MarkovProcess {
+    #[serde(skip)]
     current: State,
+    #[serde(skip)]
     starting: State,
     transitions: TMatrix,
-
+    issue_generator: IssueGenerator,
     #[serde(skip, default = "default_uniform")]
     d: Uniform<f32>,
 }
@@ -198,6 +250,8 @@ impl MarkovProcess {
         Ok(Self {
             current: starting.clone(),
             starting,
+            issue_generator: IssueGenerator::new(HashMap::new()), // TODO: model this from the rust
+            // api
             transitions: m,
             d: default_uniform(),
         })
@@ -227,9 +281,14 @@ impl MarkovProcess {
     pub fn transition_next(&mut self) -> Option<&State> {
         let x = self.d.sample(&mut rng());
         if let Some(next) = self.transitions.next(&self.current, x) {
+            let next = if self.current.is_initial() && next.is_issue() {
+                self.issue_generator.next_issue(&next)
+            } else {
+                next
+            };
             self.current = next;
             return Some(&self.current);
-        };
+        }
         return None;
     }
 
@@ -468,7 +527,7 @@ mod tests {
         let mut mp = MarkovProcess::from_yaml(p).unwrap();
         let path = mp.path_steps(10);
         println!("{}", path);
-        mp.current = State::Issue("issue1".to_string());
+        mp.current = mp.transitions.get_state("issue1").unwrap().clone();
         let path = mp.path_until(&State::Commit);
         assert_eq!(path.iter_count().last().unwrap().0, &State::Commit);
         println!("{}", path);
