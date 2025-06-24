@@ -1,6 +1,24 @@
-current: !Issue issue1
+issue_generator:
+  commits_per_issue:
+   !Issue issue1: 10.0
+   !Issue issue2: 2.0
+
 transitions:
   matrix:
+    !Initial :
+      - to: !Issue issue1,
+        p: 0.3
+
+      - to: !Issue issue2,
+        p: 0.3
+
+    !Issue issue1:
+      - to: !Module m1
+        p: 1.0
+
+    !Issue issue2:
+      - to: !Module m1
+        p: 1.0
     !File file1:
       - to: !File file2
         p: 0.32
@@ -20,10 +38,6 @@ transitions:
         p: 0.90
       - to: !File file1
         p: 0.10
-
-    !Issue issue1:
-      - to: !Module m1
-        p: 1
 
     !Module m1:
       - to: !File file1
