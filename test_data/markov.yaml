@@ -7,7 +7,7 @@ transitions:
   matrix:
     !Initial :
       - to: !Issue issue1,
-        p: 0.3
+        p: 0.7
 
       - to: !Issue issue2,
         p: 0.3
@@ -19,6 +19,7 @@ transitions:
     !Issue issue2:
       - to: !Module m1
         p: 1.0
+
     !File file1:
       - to: !File file2
         p: 0.32
@@ -29,15 +30,19 @@ transitions:
 
     !File file2:
       - to: !File file3
-        p: 0.90
+        p: 0.80
       - to: !File file1
+        p: 0.10
+      - to: !Author author1
         p: 0.10
 
     !File file3:
       - to: !File file2
-        p: 0.90
+        p: 0.85
       - to: !File file1
         p: 0.10
+      - to: !Author author1
+        p: 0.05
 
     !Module m1:
       - to: !File file1
@@ -46,7 +51,3 @@ transitions:
     !Author author1:
       - to: !Commit
         p: 1
-
-    !Initial :
-      - to: !File file1
-        p: 1.0

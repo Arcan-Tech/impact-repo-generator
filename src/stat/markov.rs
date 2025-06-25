@@ -6,7 +6,7 @@ use rand::rng;
 use rand_distr::{Distribution, Uniform};
 use serde::Deserialize;
 
-use super::generators::{ExpGenerator, Generator, StateExpSequence};
+use super::generators::StateExpSequence;
 
 #[derive(Default, Hash, Eq, PartialEq, Clone, Debug, Deserialize)]
 pub enum State {
@@ -169,6 +169,7 @@ impl TMatrix {
         );
         let mut c = 0.0;
         let mut r = None;
+        // TODO: bug: r can be None
         for t in self
             .matrix
             .get(s)
@@ -234,9 +235,13 @@ impl MarkovProcess {
         Ok(mp)
     }
 
+    /// Transitions to the next state. If the current state is an
+    /// `State::Initial` and the next selected state is `State::Issue`
+    /// then the next issue is selected using an exponential distribution.
     pub fn transition_next(&mut self) -> Option<&State> {
         let x = self.d.sample(&mut rng());
         if let Some(next) = self.transitions.next(&self.current, x) {
+            dbg!(&self.current, &next);
             let next = if self.current.is_initial() && next.is_issue() {
                 self.issue_sequence.next_in_sequence(&next)
             } else {
@@ -271,6 +276,8 @@ impl MarkovProcess {
                 if *state == *s {
                     break;
                 }
+            } else {
+                break;
             }
         }
         path

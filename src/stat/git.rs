@@ -14,7 +14,7 @@ pub struct CommitInput {
 }
 
 impl CommitInput {
-    fn try_from(path: MarkovPath, i: u32, p: u32, time: Time) -> anyhow::Result<Self> {
+    fn try_from(path: MarkovPath, i: u32, time: Time) -> anyhow::Result<Self> {
         let files = path
             .iter()
             .filter(|s| s.is_file())
@@ -23,13 +23,7 @@ impl CommitInput {
         let issue = path
             .iter()
             .find(|s| s.is_issue())
-            // TODO: generating issues this way ignores that commits
-            // belonging to the same issue are close to each other
-            // We need to simulate the selection of issues using a methodology unrelated to
-            // the markov process.
-            // We could have 3-4 mother-issues defined in the markov process, and then use
-            // a poisson to select the number of commits this will be featured in
-            .map(|s| format!("{}_{}", s.name(), i % p))
+            .map(|s| format!("#{}_{}", s.name(), i))
             .ok_or(anyhow!("No issue found in Markov path"))?;
         let message = format!("{} - commit number {}", issue, i);
         let committer = path
@@ -77,13 +71,15 @@ impl Iterator for MarkovCommitGenerator {
             self.markov.reset();
             let path = self.markov.path_until(&State::Commit);
             let ts = Time::new(self.timestamp_generator.next().unwrap(), 0);
-            let commit: anyhow::Result<CommitInput> = CommitInput::try_from(path, self.i, 5, ts);
+            let commit: anyhow::Result<CommitInput> = CommitInput::try_from(path, self.i, ts);
             return Some(commit);
         }
         None
     }
 }
 
+// TODO: implement this
+#[allow(dead_code)]
 pub struct MarkovGitWriter {
     repo: Repository,
     fm: FileManager,
@@ -115,7 +111,7 @@ mod tests {
     fn test_generation() {
         let ts = TimeStampGenerator::new(10000000, Duration::days(10));
         let mk = MarkovProcess::from_yaml("./test_data/markov.yaml").unwrap();
-        let mut mcg = MarkovCommitGenerator::new(10, mk, ts);
+        let mut mcg = MarkovCommitGenerator::new(1, mk, ts);
         while let Some(commit) = mcg.next() {
             println!("{:?}", commit);
         }
