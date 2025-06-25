@@ -6,7 +6,7 @@ use rand::rng;
 use rand_distr::{Distribution, Uniform};
 use serde::Deserialize;
 
-use super::generators::{Generator, PoissonBinaryGenerator};
+use super::generators::{ExpGenerator, Generator, StateExpSequence};
 
 #[derive(Default, Hash, Eq, PartialEq, Clone, Debug, Deserialize)]
 pub enum State {
@@ -185,50 +185,6 @@ impl TMatrix {
     }
 }
 
-// TODO: test this
-#[derive(Debug, Clone, Deserialize)]
-pub struct IssueGenerator {
-    commits_per_issue: HashMap<State, f64>,
-    #[serde(skip, default = "Option::default")]
-    current_issue: Option<State>,
-    #[serde(skip, default = "default_poisson_bin_generator")]
-    issue_generator: PoissonBinaryGenerator,
-    #[serde(default = "default_commits_per_issue")]
-    default_commits_per_issue: f64,
-}
-
-pub fn default_poisson_bin_generator() -> PoissonBinaryGenerator {
-    PoissonBinaryGenerator::new(default_commits_per_issue())
-}
-
-pub fn default_commits_per_issue() -> f64 {
-    1.0
-}
-
-impl IssueGenerator {
-    pub fn new(commits_per_issue: HashMap<State, f64>) -> Self {
-        Self {
-            commits_per_issue,
-            current_issue: None,
-            issue_generator: PoissonBinaryGenerator::new(default_commits_per_issue()),
-            default_commits_per_issue: default_commits_per_issue(),
-        }
-    }
-
-    pub fn next_issue(&mut self, issue: &State) -> State {
-        let keep_issue = self.issue_generator.next_bool().unwrap();
-        if self.current_issue.is_none() && !keep_issue {
-            self.current_issue.replace(issue.clone());
-            let commits_per_issue = *self
-                .commits_per_issue
-                .get(issue)
-                .unwrap_or(&self.default_commits_per_issue);
-            self.issue_generator = PoissonBinaryGenerator::new(commits_per_issue);
-        }
-        return self.current_issue.clone().unwrap();
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct MarkovProcess {
     #[serde(skip)]
@@ -236,7 +192,7 @@ pub struct MarkovProcess {
     #[serde(skip)]
     starting: State,
     transitions: TMatrix,
-    issue_generator: IssueGenerator,
+    issue_sequence: StateExpSequence,
     #[serde(skip, default = "default_uniform")]
     d: Uniform<f32>,
 }
@@ -250,7 +206,7 @@ impl MarkovProcess {
         Ok(Self {
             current: starting.clone(),
             starting,
-            issue_generator: IssueGenerator::new(HashMap::new()), // TODO: model this from the rust
+            issue_sequence: StateExpSequence::new(HashMap::new()), // TODO: model this from the rust
             // api
             transitions: m,
             d: default_uniform(),
@@ -282,7 +238,7 @@ impl MarkovProcess {
         let x = self.d.sample(&mut rng());
         if let Some(next) = self.transitions.next(&self.current, x) {
             let next = if self.current.is_initial() && next.is_issue() {
-                self.issue_generator.next_issue(&next)
+                self.issue_sequence.next_in_sequence(&next)
             } else {
                 next
             };

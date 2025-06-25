@@ -1,5 +1,5 @@
-issue_generator:
-  commits_per_issue:
+issue_sequence:
+  average_consecutive_commits:
    !Issue issue1: 10.0
    !Issue issue2: 2.0
 
