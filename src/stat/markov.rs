@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Display, fs, hash::Hash, path::Path, u32};
 
 use anyhow::bail;
 use itertools::Itertools;
+use log::warn;
 use rand::rng;
 use rand_distr::{Distribution, Uniform};
 use serde::Deserialize;
@@ -169,13 +170,14 @@ impl TMatrix {
         );
         let mut c = 0.0;
         let mut r = None;
-        // TODO: bug: r can be None
-        for t in self
+        let ts = self
             .matrix
             .get(s)
-            .expect(&format!("state not found: {}", s.name()))
-            .iter()
-        {
+            .expect(&format!("state not found: {}", s.name()));
+        if ts.is_empty() {
+            warn!("No transitions found for state: {}", s);
+        }
+        for t in ts.iter() {
             c = t.p + c;
             if x <= c {
                 let _ = r.insert(t.to.clone());
@@ -192,7 +194,7 @@ pub struct MarkovProcess {
     current: State,
     #[serde(skip)]
     starting: State,
-    transitions: TMatrix,
+    pub transitions: TMatrix,
     issue_sequence: StateExpSequence,
     #[serde(skip, default = "default_uniform")]
     d: Uniform<f32>,
@@ -241,7 +243,6 @@ impl MarkovProcess {
     pub fn transition_next(&mut self) -> Option<&State> {
         let x = self.d.sample(&mut rng());
         if let Some(next) = self.transitions.next(&self.current, x) {
-            dbg!(&self.current, &next);
             let next = if self.current.is_initial() && next.is_issue() {
                 self.issue_sequence.next_in_sequence(&next)
             } else {

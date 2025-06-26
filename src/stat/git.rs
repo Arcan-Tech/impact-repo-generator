@@ -113,7 +113,7 @@ mod tests {
         let mk = MarkovProcess::from_yaml("./test_data/markov.yaml").unwrap();
         let mut mcg = MarkovCommitGenerator::new(1, mk, ts);
         while let Some(commit) = mcg.next() {
-            println!("{:?}", commit);
+            assert!(commit.is_ok());
         }
     }
 }

@@ -6,10 +6,10 @@ issue_sequence:
 transitions:
   matrix:
     !Initial :
-      - to: !Issue issue1,
+      - to: !Issue issue1
         p: 0.7
 
-      - to: !Issue issue2,
+      - to: !Issue issue2
         p: 0.3
 
     !Issue issue1:

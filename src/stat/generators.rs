@@ -77,7 +77,6 @@ impl StateExpSequence {
     pub fn next_in_sequence(&mut self, next: &State) -> State {
         let swap_state = self.seq_gen.next_bool().unwrap();
         if self.current_state.is_none() || swap_state {
-            dbg!(&next);
             self.current_state.replace(next.clone());
             let average_sequence_length = *self
                 .sequence_length
