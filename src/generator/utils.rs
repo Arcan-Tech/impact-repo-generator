@@ -1,14 +1,35 @@
-use std::collections::HashMap;
-
+use chrono::{Duration, NaiveDateTime};
 use rand::rng;
 use rand_distr::{Distribution, Exp};
-use serde::Deserialize;
-
-use super::markov::State;
 
 pub trait Generator {
     fn next_f64(&mut self) -> Option<f64>;
     fn next_bool(&mut self) -> Option<bool>;
+}
+
+pub struct TimestampGenerator {
+    start: i64,
+    exp_gen: ExpGenerator,
+}
+
+impl TimestampGenerator {
+    pub fn new(start: NaiveDateTime, average_interval: Duration) -> Self {
+        let exp_gen = ExpGenerator::new(average_interval.as_seconds_f64());
+        Self {
+            start: start.and_utc().timestamp(),
+            exp_gen,
+        }
+    }
+}
+
+impl Iterator for TimestampGenerator {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let interval = self.exp_gen.next().unwrap_or(0.0);
+        self.start = self.start + interval as i64;
+        Some(self.start)
+    }
 }
 
 /// Samples values from an exponential distribution
@@ -30,72 +51,22 @@ impl ExpGenerator {
     }
 }
 
-impl Generator for ExpGenerator {
-    fn next_bool(&mut self) -> Option<bool> {
-        self.next_f64().map(|x| x <= 1.0)
-    }
+impl Iterator for ExpGenerator {
+    type Item = f64;
 
-    fn next_f64(&mut self) -> Option<f64> {
+    fn next(&mut self) -> Option<Self::Item> {
         let roll = self.d.sample(&mut rng());
         Some(roll)
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StateExpSequence {
-    #[serde(alias = "average_consecutive_commits")]
-    sequence_length: HashMap<State, f64>,
-    #[serde(skip, default = "Option::default")]
-    current_state: Option<State>,
-    #[serde(skip, default = "default_exp_gen")]
-    seq_gen: ExpGenerator,
-    #[serde(default = "default_seq_len")]
-    default_seq_len: f64,
-}
-
-pub fn default_exp_gen() -> ExpGenerator {
-    ExpGenerator::new(default_seq_len())
-}
-
-pub fn default_seq_len() -> f64 {
-    1.0
-}
-
-impl StateExpSequence {
-    pub fn new(avrg_seq_len: HashMap<State, f64>) -> Self {
-        Self {
-            sequence_length: avrg_seq_len,
-            current_state: None,
-            seq_gen: ExpGenerator::new(default_seq_len()),
-            default_seq_len: default_seq_len(),
-        }
-    }
-
-    /// Accepts the possibly new next state and returns either
-    /// the previous state or the new state based on an exponentional probability
-    /// distribution set on the current state's average sequence length.
-    pub fn next_in_sequence(&mut self, next: &State) -> State {
-        let swap_state = self.seq_gen.next_bool().unwrap();
-        if self.current_state.is_none() || swap_state {
-            self.current_state.replace(next.clone());
-            let average_sequence_length = *self
-                .sequence_length
-                .get(next)
-                .unwrap_or(&self.default_seq_len);
-            self.seq_gen = ExpGenerator::new(average_sequence_length);
-        }
-        return self.current_state.clone().unwrap();
-    }
-}
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use crate::generator::{markov::StateExpSequence, state::State};
 
+    use super::ExpGenerator;
     use rand_distr::num_traits::Inv;
-
-    use crate::stat::{generators::Generator, markov::State};
-
-    use super::{ExpGenerator, StateExpSequence};
+    use std::collections::HashMap;
 
     #[test]
     fn test_poisson_binary_gen() {
@@ -105,7 +76,7 @@ mod tests {
         let mut t = 0;
         let n = 1000;
         for _ in 0..n {
-            let b = g.next_bool().unwrap();
+            let b = g.next().map(|x| x <= 1.0).unwrap_or(false);
             if b {
                 t = t + 1;
             } else {

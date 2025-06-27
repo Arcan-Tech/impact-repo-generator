@@ -1,26 +1,12 @@
-use std::{error::Error, str::FromStr};
-
 use args::Args;
 use clap::Parser;
-use log::{error, LevelFilter};
-use stat::git::MarkovRepositoryGenerator;
+use generator::repository::MarkovRepositoryGenerator;
+use log::error;
+use std::convert::TryFrom;
+use std::error::Error;
 
 pub mod args;
-pub mod git;
-pub mod input;
-pub mod stat;
-
-//fn main() {
-//    let cli: Cli = Args::parse().into();
-//    cli.init_logger();
-//    let mut gw = cli.get_git_writer().unwrap();
-//    match gw.generate() {
-//        Ok(_) => {}
-//        Err(e) => {
-//            error!("Failed execution: {}", e)
-//        }
-//    };
-//}
+pub mod generator;
 
 fn main() {
     match run() {

@@ -3,11 +3,14 @@ use chrono::DateTime;
 use git2::{IndexAddOption, Repository, Signature, Time};
 use log::{debug, info};
 use std::fmt::Display;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
 use std::{collections::HashSet, path::Path};
 
-use crate::git::{FileManager, TimeStampGenerator};
-
-use super::markov::{MarkovPath, MarkovProcess, State};
+use super::markov::{MarkovPath, MarkovProcess};
+use super::state::State;
+use super::utils::TimestampGenerator;
 
 pub struct CommitInput {
     pub files: HashSet<String>,
@@ -57,17 +60,17 @@ impl Display for CommitInput {
 }
 
 pub struct MarkovCommitGenerator {
-    n: u32,
-    i: u32,
+    pub n: u32,
+    pub i: u32,
     markov: MarkovProcess,
-    timestamp_generator: TimeStampGenerator,
+    timestamp_generator: TimestampGenerator,
 }
 
 impl MarkovCommitGenerator {
     pub fn new(
         n_commits: u32,
         markov: MarkovProcess,
-        timestamp_generator: TimeStampGenerator,
+        timestamp_generator: TimestampGenerator,
     ) -> Self {
         Self {
             n: n_commits,
@@ -97,18 +100,17 @@ impl Iterator for MarkovCommitGenerator {
 #[allow(dead_code)]
 pub struct GitWriter {
     repo: Repository,
-    fm: FileManager,
+    fm: FileWriter,
 }
 
 impl GitWriter {
     pub fn new<P: AsRef<Path>>(repository: P) -> anyhow::Result<Self> {
         let repo = Repository::init(repository.as_ref())
             .with_context(|| "Failed initializing repository")?;
-        let fm = FileManager::new(repository.as_ref());
+        let fm = FileWriter::new(repository.as_ref());
         Ok(Self { repo, fm })
     }
-
-    pub fn write(&mut self, commit: &CommitInput) -> anyhow::Result<()> {
+    pub fn write_and_commit(&mut self, commit: &CommitInput) -> anyhow::Result<()> {
         info!("Writing files...");
         for file in commit.files.iter() {
             match self.fm.write(file, None) {
@@ -165,34 +167,27 @@ impl GitWriter {
     }
 }
 
-pub struct MarkovRepositoryGenerator {
-    writer: GitWriter,
-    markov: MarkovCommitGenerator,
+struct FileWriter {
+    working_dir: PathBuf,
 }
 
-impl MarkovRepositoryGenerator {
-    pub fn new(writer: GitWriter, markov: MarkovCommitGenerator) -> Self {
-        Self { writer, markov }
+impl FileWriter {
+    pub fn new<P>(path: P) -> Self
+    where
+        P: AsRef<Path>,
+    {
+        Self {
+            working_dir: path.as_ref().to_path_buf(),
+        }
     }
 
-    pub fn generate(&mut self) -> anyhow::Result<()> {
-        while let Some(commit) = self.markov.next() {
-            match commit {
-                Ok(commit) => match self.writer.write(&commit) {
-                    Err(error) => {
-                        log::error!("Could not generate synthetic commit commit: {}", error);
-                        continue;
-                    }
-                    _ => {
-                        log::info!("Written commit {} of {}", self.markov.i, self.markov.n);
-                    }
-                },
-                Err(error) => {
-                    log::error!("Could not generate synthetic commit commit: {}", error);
-                    continue;
-                }
-            }
+    pub fn write(&self, file: &String, contents: Option<String>) -> anyhow::Result<()> {
+        let file = self.working_dir.join(file);
+        if !file.exists() {
+            File::create(&file)?;
         }
+        let mut file = OpenOptions::new().append(true).open(file)?;
+        writeln!(file, "File changed {}", contents.unwrap_or("".to_string()))?;
         Ok(())
     }
 }
@@ -200,7 +195,7 @@ impl MarkovRepositoryGenerator {
 #[cfg(test)]
 mod tests {
     use super::MarkovCommitGenerator;
-    use crate::{git::TimeStampGenerator, stat::markov::MarkovProcess};
+    use crate::{generator::markov::MarkovProcess, generator::utils::TimestampGenerator};
     use chrono::{Duration, NaiveDate, NaiveTime};
 
     #[test]
@@ -208,7 +203,7 @@ mod tests {
         let start = NaiveDate::from_ymd_opt(2020, 1, 1)
             .unwrap()
             .and_time(NaiveTime::from_hms_opt(12, 0, 0).unwrap());
-        let ts = TimeStampGenerator::new(start, Duration::days(10));
+        let ts = TimestampGenerator::new(start, Duration::days(10));
         let mk = MarkovProcess::from_yaml("./test_data/markov.yaml").unwrap();
         let mut mcg = MarkovCommitGenerator::new(100, mk, ts);
         while let Some(commit) = mcg.next() {
