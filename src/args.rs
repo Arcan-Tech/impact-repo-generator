@@ -1,8 +1,8 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{error::Error, path::PathBuf, str::FromStr};
 
-use chrono::{Duration, NaiveDateTime};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use clap::Parser;
-use log::LevelFilter;
+use log::{debug, info, trace, LevelFilter};
 
 use crate::{
     git::{
@@ -10,6 +10,10 @@ use crate::{
         TimeStampGenerator,
     },
     input::CCModel,
+    stat::{
+        git::{MarkovCommitGenerator, MarkovRepositoryGenerator},
+        markov::MarkovProcess,
+    },
 };
 use anyhow::{Context, Result};
 
@@ -88,9 +92,7 @@ impl Cli {
     }
 
     pub fn get_timestamp_generator(&self) -> Result<TimeStampGenerator> {
-        let start_ts = NaiveDateTime::from_str(&self.args.start)?
-            .and_utc()
-            .timestamp();
+        let start_ts = NaiveDateTime::from_str(&self.args.start)?;
         Ok(TimeStampGenerator::new(
             start_ts,
             Duration::hours(self.args.hours),
@@ -125,5 +127,39 @@ impl Cli {
         self.force_create_output_dir()?;
         let gw = GitWriter::new(self.args.repository, cc_gen, cm_gen)?;
         Ok(gw)
+    }
+}
+
+impl TryFrom<Args> for MarkovRepositoryGenerator {
+    type Error = Box<dyn Error>;
+
+    fn try_from(args: Args) -> Result<Self, Self::Error> {
+        env_logger::builder()
+            .filter_level(LevelFilter::from_str(&args.log).unwrap_or(LevelFilter::Info))
+            .init();
+        info!(
+            "Reading markov model from {}",
+            args.probabilites.to_str().unwrap()
+        );
+        let markov = MarkovProcess::from_yaml(args.probabilites)?;
+        info!(
+            "Markov model contains {} states and {} transactions",
+            markov.num_states(),
+            markov.num_transitions()
+        );
+        trace!("{}", markov);
+
+        info!(
+            "Opening repository at {}",
+            args.repository.to_str().unwrap()
+        );
+        let writer = crate::stat::git::GitWriter::new(args.repository)?;
+        let start =
+            NaiveDateTime::from_str(&args.start).with_context(|| "Cannot parse start time")?;
+        let ts = TimeStampGenerator::new(start, Duration::hours(args.hours));
+        info!("Generating {} commits...", args.commits);
+        let markov = MarkovCommitGenerator::new(args.commits, markov, ts);
+        let markov = MarkovRepositoryGenerator::new(writer, markov);
+        Ok(markov)
     }
 }

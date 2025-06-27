@@ -7,7 +7,7 @@ use std::{
 
 use crate::input::{CCModel, CCPair};
 use anyhow::{bail, Result};
-use chrono::Duration;
+use chrono::{Duration, NaiveDateTime};
 use git2::{IndexAddOption, Repository, Signature, Time};
 use log::info;
 use rand::rng;
@@ -19,10 +19,10 @@ pub struct TimeStampGenerator {
 }
 
 impl TimeStampGenerator {
-    pub fn new(start: i64, average_interval: Duration) -> Self {
+    pub fn new(start: NaiveDateTime, average_interval: Duration) -> Self {
         let lambda = 1.0 / average_interval.num_seconds() as f64;
         Self {
-            start,
+            start: start.and_utc().timestamp(),
             d: Exp::new(lambda).unwrap(),
         }
     }
@@ -292,6 +292,16 @@ impl FileManager {
         let mut file_f2 = OpenOptions::new().append(true).open(&path_f2)?;
 
         writeln!(file_f2, "File changed because {} changed", pair.f1)?;
+        Ok(())
+    }
+
+    pub fn write(&self, file: &String, contents: Option<String>) -> anyhow::Result<()> {
+        let file = self.working_dir.join(file);
+        if !file.exists() {
+            File::create(&file)?;
+        }
+        let mut file = OpenOptions::new().append(true).open(file)?;
+        writeln!(file, "File changed {}", contents.unwrap_or("".to_string()))?;
         Ok(())
     }
 }

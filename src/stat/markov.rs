@@ -9,14 +9,14 @@ use serde::Deserialize;
 
 use super::generators::StateExpSequence;
 
-#[derive(Default, Hash, Eq, PartialEq, Clone, Debug, Deserialize)]
+#[derive(Default, Hash, Eq, PartialEq, Clone, Debug, Ord, PartialOrd, Deserialize)]
 pub enum State {
     #[default]
     Initial,
-    File(String),
-    Author(String),
     Issue(String),
     Module(String),
+    File(String),
+    Author(String),
     Commit,
 }
 
@@ -286,6 +286,32 @@ impl MarkovProcess {
 
     pub fn reset(&mut self) {
         self.current = self.starting.clone();
+    }
+
+    pub fn num_states(&self) -> usize {
+        self.transitions.matrix.len()
+    }
+
+    pub fn num_transitions(&self) -> usize {
+        self.transitions.matrix.iter().map(|(_, v)| v.len()).sum()
+    }
+
+    pub fn as_edge_tuples(&self) -> Vec<(&State, f32, &State)> {
+        self.transitions
+            .matrix
+            .iter()
+            .sorted()
+            .flat_map(|(from, ts)| ts.iter().map(move |to| (from, to.p, &to.to)))
+            .collect()
+    }
+}
+
+impl Display for MarkovProcess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (from, p, to) in self.as_edge_tuples().iter() {
+            writeln!(f, "{} -[{:.2}]-> {}", from, p, to)?;
+        }
+        Ok(())
     }
 }
 
