@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Context};
 use chrono::DateTime;
 use git2::{IndexAddOption, Repository, Signature, Time};
-use log::{debug, info};
 use std::fmt::Display;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -110,8 +109,8 @@ impl GitWriter {
         let fm = FileWriter::new(repository.as_ref());
         Ok(Self { repo, fm })
     }
+
     pub fn write_and_commit(&mut self, commit: &CommitInput) -> anyhow::Result<()> {
-        info!("Writing files...");
         for file in commit.files.iter() {
             match self.fm.write(file, None) {
                 Ok(_) => {}
@@ -124,7 +123,6 @@ impl GitWriter {
                 }
             };
         }
-        debug!("{}", commit);
         self.commit(&commit)?;
         Ok(())
     }

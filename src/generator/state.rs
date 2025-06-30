@@ -184,6 +184,10 @@ impl TMatrix {
         if !commits_sink {
             bail!("All Commit states should have no outgoing transitions")
         }
+        let contains_author = self.states().iter().any(|s| s.is_author());
+        if !contains_author {
+            bail!("At least one author should be defined")
+        }
         Ok(())
     }
 

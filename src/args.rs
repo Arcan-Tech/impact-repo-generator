@@ -43,9 +43,6 @@ pub struct Args {
     )]
     hours: i64,
 
-    #[arg(long, help = "Ovewrite existing repository")]
-    force: bool,
-
     #[arg(
         long,
         default_value = "INFO",
