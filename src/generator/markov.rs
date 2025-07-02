@@ -120,6 +120,22 @@ impl MarkovProcess {
     pub fn as_edge_tuples(&self) -> Vec<(&State, f32, &State)> {
         self.transitions.as_edge_tuples()
     }
+
+    pub fn to_dot(&self) -> String {
+        let mut dot = String::from("digraph MarkovProcess {\n    rankdir=LR;\n    node [shape=circle];\n");
+        for (from, prob, to) in self.as_edge_tuples() {
+            dot.push_str(&format!(
+                "    \"{}\" -> \"{}\" [label=\"{:.2}\"];\n",
+                from.name(),
+                to.name(),
+                prob
+            ));
+        }
+        dot.push_str("}");
+        dot
+    }
+
+
 }
 
 impl Display for MarkovProcess {
@@ -269,6 +285,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_markov_process() {
+        use std::fs;
         let p = "./test_data/markov.yaml";
         let mp = MarkovProcess::from_yaml(p);
         assert!(mp.is_ok(), "{}", mp.unwrap_err());
@@ -280,6 +297,9 @@ mod tests {
             State::Commit => {}
             _ => assert!(false, "Last state should be Commit"),
         }
+
+        let dot_output = mp.to_dot();
+        fs::write("markov_from_yaml.dot", dot_output).expect("Unable to write DOT file from YAML");
     }
 
     #[test]
@@ -293,4 +313,21 @@ mod tests {
         assert_eq!(path.iter_count().last().unwrap().0, &State::Commit);
         println!("{}", path);
     }
+
+    #[test]
+    fn test_export_dot() {
+        use std::fs;
+        let mut m = TMatrix::new();
+        let states: Vec<State> = vec!["A".into(), "B".into(), "C".into()];
+        m.add_states(states.clone());
+        m.set_transitions("A", vec![("A", 0.1), ("B", 0.6), ("C", 0.3)]);
+        m.set_transitions("B", vec![("B", 0.2), ("C", 0.8)]);
+        m.set_transitions("C", vec![("A", 0.5), ("B", 0.5)]);
+
+        let mp = MarkovProcess::new(m, states[0].clone()).unwrap();
+        let dot_output = mp.to_dot();
+
+        fs::write("markov.dot", dot_output).expect("Unable to write DOT file");
+    }
+
 }
