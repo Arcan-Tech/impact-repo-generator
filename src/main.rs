@@ -40,7 +40,6 @@ fn run() -> Result<(), Box<dyn Error>> {
             hours,
             log,
         } => {
-        
             env_logger::builder()
                 .filter_level(LevelFilter::from_str(&log).unwrap_or(LevelFilter::Info))
                 .init();

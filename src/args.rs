@@ -1,9 +1,8 @@
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
@@ -11,6 +10,7 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Generate a synthetic repository using a markov chain
     Generate {
         #[arg(short, long, help = "Markov model description YAML file.")]
         markov: PathBuf,
@@ -19,10 +19,10 @@ pub enum Command {
         repository: PathBuf,
 
         #[arg(
-        short,
-        long,
-        default_value_t = 10,
-        help = "Number of commits to generate"
+            short,
+            long,
+            default_value_t = 10,
+            help = "Number of commits to generate"
         )]
         commits: u32,
 
@@ -48,12 +48,12 @@ pub enum Command {
         log: String,
     },
 
+    /// Export a markov model as a dot file to be visualized
     Dot {
         #[arg(short, long, help = "Markov model description YAML file.")]
         markov: PathBuf,
 
         #[arg(short, long, help = "Output dot file")]
         output: PathBuf,
-    },    
+    },
 }
-

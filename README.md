@@ -42,18 +42,20 @@ The naming of the issues in the commit messages follows a specific naming conven
 This format allows to generate multiple issues while knowing the original meta issue they originate from.
 For example, `issue1_1` and `issue1_2` are two different issue that both originate from `issue1` **Issue** state.
 
-# Usage 
+# Usage
+## Generate
 Running
 ```sh
 ./repo-generator generate -m ./test_data/markov.yaml -r /tmp/output_repo -c 100 --hours 48 --start 2023-01-01T12:00:00
 ```
 will generate a repository at `/tmp/output_repo` with `-c 100` commits with an average of 48 hours interval between them, starting from January 1 2023.
 
+## Visualize
 Running
 ```sh
 ./repo-generator dot -m ./test_data/markov.yaml -o /tmp/markov.dot
 ```
-giving the markov model as input will generate the    corresponding .dot file at `/tmp/markov.dot`.
+giving the markov model as input will generate the corresponding .dot file at `/tmp/markov.dot`.
 
 Use the command graphviz `dot -Tpng markov.dot -o markov.png` to generate the png of the graph.
 
